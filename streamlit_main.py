@@ -11,50 +11,26 @@ import os
 
 # 1. Read data
 current_directory = os.path.dirname(os.path.abspath(__file__))
-comment_label_path = os.path.join(current_directory, 'final_data3.csv')
-comment_label_data = pd.read_csv(comment_label_path, encoding='utf-8')
+
 # Load dữ liệu bình luận riêng
 customer_comment_path = os.path.join(current_directory, 'Danh_gia2.csv')
 customer_comment_data = pd.read_csv(customer_comment_path, encoding='utf-8')
 
 # Đọc dữ liệu từ file CSV2 (chứa các đánh giá tích cực/tiêu cực)
-
 filtered_path = os.path.join(current_directory, 'resources', 'Data for GUI.csv')
 filtered = pd.read_csv(filtered_path)
 
 # 2. Data pre-processing
+comment_label_path = os.path.join(current_directory, 'final_data3.csv')
+comment_label_data = pd.read_csv(comment_label_path, encoding='utf-8')
 source = comment_label_data['noi_dung_binh_luan']
 target = comment_label_data['label']
 
-# Clean NaN values by replacing them with empty string
-source = source.fillna('')
-
-text_data = np.array(source)
-
-count = CountVectorizer(max_features=6000)
-count.fit(text_data)
-bag_of_words = count.transform(text_data)
-
-X = bag_of_words.toarray()
-
-y = np.array(target)
-
-#3. Save models
-  
-# luu model CountVectorizer (count)
-pkl_count = "count_model.pkl"  
-with open(pkl_count, 'wb') as file:  
-    pickle.dump(count, file)
-
 #4. Load models 
 # Đọc model
-# import pickle
-pkl_file_path = os.path.join(current_directory, 'lg_predictor.pkl')  
+pkl_file_path = os.path.join(current_directory, 'resources', 'svm_pipeline_model.pkl')
 with open(pkl_file_path, 'rb') as file:  
     lg_prediction = pickle.load(file)
-# Read count len model
-with open(pkl_count, 'rb') as file:  
-    count_model = pickle.load(file)
 
 #--------------
 # GUI
@@ -116,28 +92,83 @@ elif choice == 'New Prediction':
     flag = False
     lines = None
     type = st.radio("Upload data or Input data?", options=("Upload", "Input"))
-    if type=="Upload":
+    if type == "Upload":
         # Upload file
         uploaded_file_1 = st.file_uploader("Choose a file", type=['txt', 'csv'])
+        
         if uploaded_file_1 is not None:
-            lines = pd.read_csv(uploaded_file_1, header=None)
-            st.dataframe(lines)            
-            lines = lines[0]     
-            flag = True                          
-    if type=="Input":        
-        content = st.text_area(label="Input your content:")
-        if content!="":
-            lines = np.array([content])
-            flag = True
-    
-    if flag:
-        st.write("Content:")
-        if len(lines)>0:
-            st.code(lines)        
-            x_new = count_model.transform(lines)        
-            y_pred_new = lg_prediction.predict(x_new)       
-            st.code("New predictions (0: Negative, 1. Neutral, 2: Positive): " + str(y_pred_new))
+            # Read and process the file depending on its extension
+            if uploaded_file_1.name.endswith('.csv'):
+                # For CSV file, each comment is separated by commas
+                lines = pd.read_csv(uploaded_file_1, header=None)
+                comments = lines[0].tolist()  # Convert to list of comments
+            elif uploaded_file_1.name.endswith('.txt'):
+                # For TXT file, each comment is separated by a newline
+                lines = uploaded_file_1.read().decode("utf-8").splitlines()
+                comments = lines  # List of comments
 
+            # Predict for each comment
+            predictions = []
+            for comment in comments:
+                # Assuming 'comment' is the text token you want to pass to the model
+                new_data = [comment]  # Extract the text tokens directly into a list
+
+                # Convert the data to a DataFrame with an appropriate column name
+                new_data_df = pd.DataFrame(new_data, columns=['text_token'])
+
+                # Now make the prediction
+                y_pred_new = lg_prediction.predict(new_data_df)
+
+                # Map prediction to label
+                prediction_label = "Negative" if y_pred_new[0] == 0 else "Neutral" if y_pred_new[0] == 1 else "Positive"
+
+                # Append the prediction label to the result list
+                predictions.append(prediction_label)
+
+            # Create a DataFrame to display results as a table
+            results_df = pd.DataFrame({
+                "Comment": comments,
+                "Predict": predictions
+            })
+
+            # Display the results in a table
+            st.table(results_df)
+
+    if type == "Input":
+        content = st.text_area(label="Input your content (separate comments by line breaks):")
+        
+        # Button to trigger prediction
+        if st.button("Predict"):
+            if content != "":
+                # Split the content by line breaks to get individual comments
+                lines = content.splitlines()
+                
+                # List to store the results
+                results = []
+                
+                for comment in lines:
+                    # Assuming 'comment' is the text token you want to pass to the model
+                    new_data = [comment]  # Extract the text tokens directly into a list
+
+                    # Convert the data to a DataFrame with an appropriate column name
+                    new_data_df = pd.DataFrame(new_data, columns=['text_token'])
+
+                    # Now make the prediction
+                    y_pred_new = lg_prediction.predict(new_data_df)
+
+                    # Map prediction to label
+                    prediction_label = "Negative" if y_pred_new[0] == 0 else "Neutral" if y_pred_new[0] == 1 else "Positive"
+
+                    # Append the result (comment and its corresponding prediction)
+                    results.append([comment, prediction_label])
+
+                # Convert the results into a DataFrame for displaying as a table
+                results_df = pd.DataFrame(results, columns=["Comment", "Predict"])
+
+                # Display the table in Streamlit
+                st.table(results_df)
+        else:
+            st.warning("Please enter some content to predict.")
 
 # Add Product Search for Business Owner
 elif choice == "Product Search for Business Owners":
